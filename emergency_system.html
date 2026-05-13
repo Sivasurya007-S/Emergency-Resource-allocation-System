@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>🚑 Emergency Resource Allocation System</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --card: #20243a;
+    --accent: #e74c3c; --green: #2ecc71; --blue: #3498db;
+    --orange: #f39c12; --purple: #9b59b6; --text: #ecf0f1;
+    --muted: #8892a4; --border: #2d3453;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif; min-height:100vh; }
+
+  header {
+    background: linear-gradient(135deg, #1a0a0a 0%, #1a1d27 50%, #0a1a2a 100%);
+    border-bottom: 2px solid var(--accent);
+    padding: 16px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { font-size: 1.4rem; font-weight: 700; }
+  header p  { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+  .badge { background:var(--accent); color:white; padding:3px 10px; border-radius:20px; font-size:0.75rem; font-weight:600; }
+
+  .layout { display: grid; grid-template-columns: 340px 1fr; height: calc(100vh - 70px); }
+
+  /* SIDEBAR */
+  .sidebar { background:var(--surface); border-right:1px solid var(--border); overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .section-title { font-size:0.7rem; font-weight:700; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase; margin-bottom:6px; }
+
+  .algo-btn {
+    width:100%; padding:10px 14px; border:none; border-radius:8px; cursor:pointer;
+    font-size:0.85rem; font-weight:600; display:flex; align-items:center; gap:10px;
+    transition: all 0.2s; text-align:left; position:relative; overflow:hidden;
+  }
+  .algo-btn::before { content:''; position:absolute; inset:0; opacity:0.12; }
+  .algo-btn.bfs    { background:rgba(46,204,113,0.15); border:1px solid rgba(46,204,113,0.4); color:var(--green); }
+  .algo-btn.dfs    { background:rgba(52,152,219,0.15); border:1px solid rgba(52,152,219,0.4); color:var(--blue); }
+  .algo-btn.befs   { background:rgba(243,156,18,0.15); border:1px solid rgba(243,156,18,0.4); color:var(--orange); }
+  .algo-btn.astar  { background:rgba(231,76,60,0.15);  border:1px solid rgba(231,76,60,0.4);  color:var(--accent); }
+  .algo-btn.active { opacity:1; transform:translateX(3px); }
+  .algo-btn:hover  { transform:translateX(3px); }
+  .algo-btn .dot   { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .bfs  .dot { background:var(--green); }
+  .dfs  .dot { background:var(--blue); }
+  .befs .dot { background:var(--orange); }
+  .astar .dot { background:var(--accent); box-shadow:0 0 8px var(--accent); }
+  .algo-btn .tag { margin-left:auto; font-size:0.65rem; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,0.1); }
+
+  .result-panel {
+    background:var(--card); border-radius:10px; padding:14px;
+    border:1px solid var(--border); animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+  .result-panel h3 { font-size:0.9rem; margin-bottom:10px; }
+  .result-panel .kv { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border); font-size:0.8rem; }
+  .result-panel .kv:last-child { border:none; }
+  .result-panel .kv span:first-child { color:var(--muted); }
+  .result-panel .kv span:last-child  { font-weight:600; }
+  .path-steps { margin-top:10px; display:flex; flex-wrap:wrap; gap:4px; }
+  .path-step  { font-size:0.7rem; padding:3px 8px; background:rgba(255,255,255,0.07); border-radius:12px; }
+  .path-arrow { font-size:0.65rem; color:var(--muted); align-self:center; }
+
+  .patient-card {
+    background:var(--card); border-radius:8px; padding:10px 12px;
+    border-left:3px solid; margin-bottom:6px; font-size:0.8rem;
+  }
+  .patient-card .pname { font-weight:600; }
+  .patient-card .pcond { font-size:0.7rem; color:var(--muted); }
+  .critical  { border-color:var(--accent); }
+  .serious   { border-color:var(--orange); }
+  .moderate  { border-color:var(--blue); }
+  .stable    { border-color:var(--green); }
+
+  .stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .stat-box { background:var(--card); border-radius:8px; padding:10px; text-align:center; border:1px solid var(--border); }
+  .stat-box .val { font-size:1.4rem; font-weight:700; }
+  .stat-box .lbl { font-size:0.65rem; color:var(--muted); margin-top:2px; }
+
+  /* MAP */
+  #map { width:100%; height:100%; }
+
+  /* MAP LEGEND */
+  .map-legend {
+    position:absolute; bottom:20px; right:20px; z-index:999;
+    background:rgba(15,17,23,0.92); border:1px solid var(--border);
+    border-radius:10px; padding:12px 16px; font-size:0.75rem; min-width:180px;
+    backdrop-filter:blur(8px);
+  }
+  .map-legend h4 { margin-bottom:8px; font-size:0.8rem; }
+  .legend-item { display:flex; align-items:center; gap:8px; margin:5px 0; }
+  .legend-line { width:24px; height:3px; border-radius:2px; }
+  .legend-dot  { width:10px; height:10px; border-radius:50%; }
+
+  .run-all-btn {
+    width:100%; padding:12px; background:linear-gradient(135deg,#c0392b,#e74c3c);
+    border:none; border-radius:8px; color:white; font-size:0.9rem; font-weight:700;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;
+    transition:all 0.2s; letter-spacing:0.5px;
+  }
+  .run-all-btn:hover { transform:translateY(-1px); box-shadow:0 4px 15px rgba(231,76,60,0.4); }
+
+  .node-info { font-size:0.75rem; line-height:1.6; }
+  .node-info strong { display:block; font-size:0.85rem; margin-bottom:4px; }
+
+  ::-webkit-scrollbar { width:5px; } ::-webkit-scrollbar-track { background:var(--surface); }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="font-size:2rem;">🚑</div>
+  <div>
+    <h1>Emergency Resource Allocation System</h1>
+    <p>Search-Based AI • BFS • DFS • Best-First • A* Search</p>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;">
+    <span class="badge">AI Mini Project</span>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- STATS -->
+    <div class="section-title">System Overview</div>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="val" style="color:var(--green)">3</div><div class="lbl">Hospitals</div></div>
+      <div class="stat-box"><div class="val" style="color:var(--blue)">3</div><div class="lbl">Ambul Stations</div></div>
+      <div class="stat-box"><div class="val" style="color:var(--orange)">39</div><div class="lbl">Total ICU Beds</div></div>
+      <div class="stat-box"><div class="val" style="color:var(--accent)">18</div><div class="lbl">Ambulances</div></div>
+    </div>
+
+    <!-- RUN ALL -->
+    <button class="run-all-btn" onclick="runAll()">⚡ Run All Algorithms</button>
+
+    <!-- ALGORITHMS -->
+    <div class="section-title">Search Algorithms</div>
+
+    <button class="algo-btn bfs" onclick="runBFS()">
+      <span class="dot"></span>
+      <div><div>BFS Search</div><div style="font-size:0.7rem;opacity:0.7;font-weight:400">Nearest Hospital</div></div>
+      <span class="tag">Breadth-First</span>
+    </button>
+
+    <button class="algo-btn dfs" onclick="runDFS()">
+      <span class="dot"></span>
+      <div><div>DFS Search</div><div style="font-size:0.7rem;opacity:0.7;font-weight:400">Area Exploration</div></div>
+      <span class="tag">Depth-First</span>
+    </button>
+
+    <button class="algo-btn befs" onclick="runBestFirst()">
+      <span class="dot"></span>
+      <div><div>Best-First Search</div><div style="font-size:0.7rem;opacity:0.7;font-weight:400">Priority Patients</div></div>
+      <span class="tag">Heuristic</span>
+    </button>
+
+    <button class="algo-btn astar" onclick="runAStar()">
+      <span class="dot"></span>
+      <div><div>A* Search</div><div style="font-size:0.7rem;opacity:0.7;font-weight:400">Shortest Emergency Route</div></div>
+      <span class="tag">Optimal</span>
+    </button>
+
+    <!-- RESULT PANEL -->
+    <div id="result-panel" style="display:none;"></div>
+
+    <!-- PATIENTS -->
+    <div class="section-title">Patient Priority Queue</div>
+    <div class="patient-card critical">
+      <div class="pname">🔴 Patient A — Critical</div>
+      <div class="pcond">Priority 1 → Govt General Hospital (ICU)</div>
+    </div>
+    <div class="patient-card serious">
+      <div class="pname">🟠 Patient B — Serious</div>
+      <div class="pcond">Priority 2 → Apollo Hospital</div>
+    </div>
+    <div class="patient-card moderate">
+      <div class="pname">🔵 Patient C — Moderate</div>
+      <div class="pcond">Priority 3 → MIOT Hospital</div>
+    </div>
+    <div class="patient-card stable">
+      <div class="pname">🟢 Patient D — Stable</div>
+      <div class="pcond">Priority 4 → Fortis Malar</div>
+    </div>
+
+  </div>
+
+  <!-- MAP -->
+  <div style="position:relative;">
+    <div id="map"></div>
+    <div class="map-legend">
+      <h4>🗺 Map Legend</h4>
+      <div class="legend-item"><span class="legend-dot" style="background:#e74c3c"></span> Accident Site</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#2ecc71"></span> Hospital</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#3498db"></span> Ambulance Station</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#95a5a6"></span> Road Junction</div>
+      <hr style="border-color:#2d3453;margin:8px 0">
+      <div class="legend-item"><span class="legend-line" style="background:#2ecc71"></span> BFS Path</div>
+      <div class="legend-item"><span class="legend-line" style="background:#3498db"></span> DFS Path</div>
+      <div class="legend-item"><span class="legend-line" style="background:#f39c12"></span> Best-First Path</div>
+      <div class="legend-item"><span class="legend-line" style="background:#e74c3c"></span> A* Path</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// DATA
+// ─────────────────────────────────────────────
+const NODES = {
+  0:  {name:"Accident Site",      lat:13.0827, lon:80.2707, type:"accident",  icu:0,  amb:0},
+  1:  {name:"Apollo Hospital",    lat:13.0600, lon:80.2500, type:"hospital",  icu:10, amb:3},
+  2:  {name:"Fortis Malar",       lat:13.0100, lon:80.2600, type:"hospital",  icu:6,  amb:2},
+  3:  {name:"MIOT Hospital",      lat:13.0750, lon:80.1800, type:"hospital",  icu:8,  amb:4},
+  4:  {name:"Ambul Station A",    lat:13.0900, lon:80.2800, type:"ambulance", icu:0,  amb:5},
+  5:  {name:"Ambul Station B",    lat:13.0700, lon:80.2900, type:"ambulance", icu:0,  amb:3},
+  6:  {name:"Junction North",     lat:13.1000, lon:80.2700, type:"junction",  icu:0,  amb:0},
+  7:  {name:"Junction East",      lat:13.0800, lon:80.3000, type:"junction",  icu:0,  amb:0},
+  8:  {name:"Junction West",      lat:13.0800, lon:80.2400, type:"junction",  icu:0,  amb:0},
+  9:  {name:"Junction South",     lat:13.0500, lon:80.2700, type:"junction",  icu:0,  amb:0},
+  10: {name:"Govt General Hosp",  lat:13.0750, lon:80.2750, type:"hospital",  icu:15, amb:6},
+  11: {name:"Ambul Station C",    lat:13.0650, lon:80.2650, type:"ambulance", icu:0,  amb:4},
+};
+
+const EDGES = [
+  [0,6,2.1],[0,7,2.5],[0,8,3.0],[0,4,1.5],[0,5,2.0],[0,10,1.2],[0,11,1.8],
+  [4,6,1.2],[5,7,1.0],[6,3,4.5],[7,1,5.0],[8,3,3.2],[8,1,4.0],
+  [9,2,2.0],[9,1,3.5],[6,7,1.5],[7,9,3.0],[8,9,3.5],[6,8,2.2],
+  [10,11,0.8],[11,9,2.0],[10,8,1.5],[11,1,3.0],
+];
+
+function buildGraph() {
+  const g = {};
+  for(const id in NODES) g[id] = [];
+  EDGES.forEach(([u,v,w]) => { g[u].push({to:v,w}); g[v].push({to:u,w}); });
+  return g;
+}
+const GRAPH = buildGraph();
+
+function dist(a, b) {
+  const dx = NODES[a].lat - NODES[b].lat, dy = NODES[a].lon - NODES[b].lon;
+  return Math.sqrt(dx*dx+dy*dy)*111;
+}
+
+function pathCost(path) {
+  let c=0;
+  for(let i=0;i<path.length-1;i++){
+    const e = GRAPH[path[i]].find(e=>e.to==path[i+1]);
+    if(e) c+=e.w;
+  }
+  return Math.round(c*100)/100;
+}
+
+// ─────────────────────────────────────────────
+// ALGORITHMS
+// ─────────────────────────────────────────────
+
+function bfs(start) {
+  const visited=new Set(), queue=[[start,[start]]];
+  visited.add(start);
+  while(queue.length){
+    const [node,path]=queue.shift();
+    if(NODES[node].type==="hospital" && NODES[node].icu>0)
+      return {path, dest:node};
+    for(const {to} of GRAPH[node]){
+      if(!visited.has(to)){ visited.add(to); queue.push([to,[...path,to]]); }
+    }
+  }
+  return null;
+}
+
+function dfs(start) {
+  const visited=new Set(), stack=[[start,[start]]];
+  const found=[];
+  while(stack.length){
+    const [node,path]=stack.pop();
+    if(visited.has(node)) continue;
+    visited.add(node);
+    if(NODES[node].type==="ambulance") found.push({node,path:[...path]});
+    for(const {to} of GRAPH[node])
+      if(!visited.has(to)) stack.push([to,[...path,to]]);
+  }
+  if(!found.length) return null;
+  return found.reduce((a,b)=>a.path.length<b.path.length?a:b);
+}
+
+function bestFirst(start, goal) {
+  const visited=new Set();
+  const pq=[[dist(start,goal),start,[start]]];
+  while(pq.length){
+    pq.sort((a,b)=>a[0]-b[0]);
+    const [,node,path]=pq.shift();
+    if(visited.has(node)) continue;
+    visited.add(node);
+    if(node==goal) return {path, dest:node};
+    for(const {to} of GRAPH[node])
+      if(!visited.has(to)) pq.push([dist(to,goal),to,[...path,to]]);
+  }
+  return null;
+}
+
+function astar(start, goal) {
+  const visited=new Set();
+  const pq=[[dist(start,goal),0,start,[start]]];
+  while(pq.length){
+    pq.sort((a,b)=>a[0]-b[0]);
+    const [,g,node,path]=pq.shift();
+    if(visited.has(node)) continue;
+    visited.add(node);
+    if(node==goal) return {path, dest:node, cost:g};
+    for(const {to,w} of GRAPH[node]){
+      if(!visited.has(to)){
+        const ng=g+w;
+        pq.push([ng+dist(to,goal),ng,to,[...path,to]]);
+      }
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────
+// MAP SETUP
+// ─────────────────────────────────────────────
+
+const map = L.map('map').setView([13.065, 80.255], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'© OpenStreetMap', maxZoom:18
+}).addTo(map);
+
+const colorMap = {accident:'#e74c3c',hospital:'#2ecc71',ambulance:'#3498db',junction:'#7f8c8d'};
+const nodeMarkers = {};
+
+// Draw base edges
+EDGES.forEach(([u,v]) => {
+  L.polyline([[NODES[u].lat,NODES[u].lon],[NODES[v].lat,NODES[v].lon]],
+    {color:'#2d3453',weight:1.5,opacity:0.6}).addTo(map);
+});
+
+// Draw nodes
+for(const id in NODES){
+  const n=NODES[id], color=colorMap[n.type];
+  const size = n.type==='accident'?18 : n.type==='hospital'?14 : 11;
+  const icon = L.divIcon({
+    html:`<div style="width:${size}px;height:${size}px;background:${color};border-radius:50%;
+           border:2px solid white;box-shadow:0 0 8px ${color}88;
+           display:flex;align-items:center;justify-content:center;font-size:${size*0.55}px;">
+           ${n.type==='accident'?'⚡':n.type==='hospital'?'+':n.type==='ambulance'?'🚑':''}
+         </div>`,
+    iconSize:[size,size], iconAnchor:[size/2,size/2], className:''
+  });
+  const m = L.marker([n.lat,n.lon],{icon})
+    .bindPopup(`<div class="node-info">
+      <strong>${n.name}</strong>
+      Type: <b style="color:${color}">${n.type.toUpperCase()}</b><br>
+      ${n.icu?`🛏 ICU Beds: <b>${n.icu}</b><br>`:''}
+      ${n.amb?`🚑 Ambulances: <b>${n.amb}</b><br>`:''}
+      📍 ${n.lat.toFixed(4)}, ${n.lon.toFixed(4)}
+    </div>`)
+    .addTo(map);
+  nodeMarkers[id]=m;
+}
+
+let activeLayers = [];
+function clearPaths(){ activeLayers.forEach(l=>map.removeLayer(l)); activeLayers=[]; }
+
+function drawPath(path, color, weight=5, dash=''){
+  const coords = path.map(n=>[NODES[n].lat,NODES[n].lon]);
+  const line = L.polyline(coords,{color,weight,opacity:0.9,dashArray:dash||undefined}).addTo(map);
+  activeLayers.push(line);
+
+  // Animated dots along path
+  coords.forEach((c,i)=>{
+    if(i===0||i===coords.length-1) return;
+    const dot = L.circleMarker(c,{radius:5,color,fillColor:color,fillOpacity:0.8,weight:2}).addTo(map);
+    activeLayers.push(dot);
+  });
+  map.fitBounds(line.getBounds(),{padding:[40,40]});
+}
+
+function buildPathSteps(path){
+  return path.map((n,i)=>`
+    ${i>0?'<span class="path-arrow">→</span>':''}
+    <span class="path-step">${NODES[n].name}</span>
+  `).join('');
+}
+
+function showResult(html){ 
+  const p=document.getElementById('result-panel');
+  p.style.display='block';
+  p.innerHTML=html;
+}
+
+// ─────────────────────────────────────────────
+// BUTTON HANDLERS
+// ─────────────────────────────────────────────
+
+function runBFS(){
+  clearPaths();
+  const r=bfs(0);
+  if(!r) return;
+  drawPath(r.path,'#2ecc71',6);
+  const cost=pathCost(r.path);
+  showResult(`<div class="result-panel">
+    <h3 style="color:#2ecc71">🔵 BFS — Nearest Hospital Found</h3>
+    <div class="kv"><span>Destination</span><span style="color:#2ecc71">${NODES[r.dest].name}</span></div>
+    <div class="kv"><span>ICU Beds Available</span><span>${NODES[r.dest].icu}</span></div>
+    <div class="kv"><span>Distance</span><span>${cost} km</span></div>
+    <div class="kv"><span>Path Length</span><span>${r.path.length} nodes</span></div>
+    <div class="kv"><span>Algorithm</span><span>Breadth-First Search</span></div>
+    <div class="path-steps">${buildPathSteps(r.path)}</div>
+  </div>`);
+}
+
+function runDFS(){
+  clearPaths();
+  const r=dfs(0);
+  if(!r) return;
+  drawPath(r.path,'#3498db',5,'8 4');
+  const cost=pathCost(r.path);
+  showResult(`<div class="result-panel">
+    <h3 style="color:#3498db">🟣 DFS — Ambulance Station Found</h3>
+    <div class="kv"><span>Nearest Station</span><span style="color:#3498db">${NODES[r.node].name}</span></div>
+    <div class="kv"><span>Ambulances Available</span><span>${NODES[r.node].amb}</span></div>
+    <div class="kv"><span>Distance</span><span>${cost} km</span></div>
+    <div class="kv"><span>Path Length</span><span>${r.path.length} nodes</span></div>
+    <div class="kv"><span>Algorithm</span><span>Depth-First Search</span></div>
+    <div class="path-steps">${buildPathSteps(r.path)}</div>
+  </div>`);
+}
+
+function runBestFirst(){
+  clearPaths();
+  // Critical patient → Govt General (node 10)
+  const r=bestFirst(0,10);
+  if(!r) return;
+  drawPath(r.path,'#f39c12',5,'4 4');
+  const cost=pathCost(r.path);
+  showResult(`<div class="result-panel">
+    <h3 style="color:#f39c12">🟠 Best-First — Priority Patient Route</h3>
+    <div class="kv"><span>Patient</span><span style="color:#e74c3c">🔴 Critical (Priority 1)</span></div>
+    <div class="kv"><span>Destination</span><span style="color:#f39c12">${NODES[r.dest].name}</span></div>
+    <div class="kv"><span>ICU Beds</span><span>${NODES[r.dest].icu}</span></div>
+    <div class="kv"><span>Distance</span><span>${cost} km</span></div>
+    <div class="kv"><span>Algorithm</span><span>Best-First (Heuristic)</span></div>
+    <div class="path-steps">${buildPathSteps(r.path)}</div>
+  </div>`);
+}
+
+function runAStar(){
+  clearPaths();
+  const r=astar(0,1); // Apollo Hospital
+  if(!r) return;
+  drawPath(r.path,'#e74c3c',7);
+  showResult(`<div class="result-panel">
+    <h3 style="color:#e74c3c">⭐ A* — Shortest Emergency Route</h3>
+    <div class="kv"><span>Destination</span><span style="color:#e74c3c">${NODES[r.dest].name}</span></div>
+    <div class="kv"><span>Optimal Distance</span><span>${Math.round(r.cost*100)/100} km</span></div>
+    <div class="kv"><span>ICU Beds</span><span>${NODES[r.dest].icu}</span></div>
+    <div class="kv"><span>Path Length</span><span>${r.path.length} nodes</span></div>
+    <div class="kv"><span>Algorithm</span><span>A* (g + h)</span></div>
+    <div class="path-steps">${buildPathSteps(r.path)}</div>
+  </div>`);
+}
+
+function runAll(){
+  clearPaths();
+  const bfsR   = bfs(0);
+  const dfsR   = dfs(0);
+  const bfR    = bestFirst(0,10);
+  const asR    = astar(0,1);
+  if(bfsR)  drawPath(bfsR.path, '#2ecc71',4,'12 4');
+  if(dfsR)  drawPath(dfsR.path, '#3498db',4,'8 4');
+  if(bfR)   drawPath(bfR.path,  '#f39c12',4,'4 4');
+  if(asR)   drawPath(asR.path,  '#e74c3c',6);
+
+  const rows = [
+    bfsR ? `<div class="kv"><span style="color:#2ecc71">BFS</span><span>${NODES[bfsR.dest].name} — ${pathCost(bfsR.path)} km</span></div>` : '',
+    dfsR ? `<div class="kv"><span style="color:#3498db">DFS</span><span>${NODES[dfsR.node].name} — ${pathCost(dfsR.path)} km</span></div>` : '',
+    bfR  ? `<div class="kv"><span style="color:#f39c12">Best-First</span><span>${NODES[bfR.dest].name} — ${pathCost(bfR.path)} km</span></div>` : '',
+    asR  ? `<div class="kv"><span style="color:#e74c3c">A*</span><span>${NODES[asR.dest].name} — ${Math.round(asR.cost*100)/100} km (optimal)</span></div>` : '',
+  ].join('');
+
+  showResult(`<div class="result-panel">
+    <h3>⚡ All Algorithms Summary</h3>
+    ${rows}
+    <div class="kv"><span>Status</span><span style="color:#2ecc71">✅ All Complete</span></div>
+  </div>`);
+}
+
+// Auto-run on load
+setTimeout(runAll, 600);
+</script>
+</body>
+</html>
